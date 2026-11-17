@@ -1066,3 +1066,830 @@ costs the whole gain (0.1213) — the user shipped it knowing that.
 - Edge-case suite (19 cases, /tmp/cv6/edge6.py): ALL PASS.
 - No secrets in the entry dir outside `.makefun/owner.json` (wallet
   address only); no `__pycache__` committed.
+
+## 13. Round 7 — night-share early slope: the first passing round (2026-11-17)
+
+The user paused the submission (first attempt refused 422 on README /
+About branding) and ordered: keep optimizing until it reaches
+prize-winning level. Round 6 had concluded 0.10 was unreachable with
+the tested mechanisms; round 7 went looking for *new* mechanisms
+(harness `/tmp/cv7/v7.py`, `forecast_v7`).
+
+### 13.1 The candidate
+
+On top of shipped round 6 (trim 0.5, σ×1.40, P1 σ 1.0), three
+constant changes plus one new early-hour adjustment:
+
+- `EVE_WEIGHT` 0.25 → **0.5** (evening-share component of the
+  steepness factor)
+- `PACIFIC_SHRINK` 0.5 → **0.75** (less shrinkage on the pacific
+  early slope)
+- `SLOPE_SHRINK` 0.5 → **0.6** (less shrinkage on per-hour factor
+  slopes)
+- **Night-share early slope, hours 3–4, shrink 1.0 (unshrunk)** — new:
+  feature `night = log(_band_share(rows, day_start, 2, 5))`, the log
+  mean viewers at UTC 02–05 over the 7 pre-release days / daily mean,
+  added as the 6th element of the feats tuple in both
+  `_curve_features` and `_target_features`; `_night_fit` mirrors
+  `_pacific_fit` exactly (z-score on the pool, pooled within-hour OLS
+  slope of raw log-ratio on that z over hours 3–4, no z-cap); applied
+  in `adj_lr` after the pacific block, hours 3–4 only.
+
+### 13.2 Why it works
+
+The loss lives at h3/h4 (per-hour LOO loss 0.216/0.172 vs a typical
+0.11–0.14; residual sd 0.409/0.294 vs ~0.23 elsewhere). The night
+slope is positive in **every** LOO fold (+0.143 to +0.258): a fanbase
+with a real night audience keeps watching through the 02:00–04:00Z
+dead zone, so its dip is shallower. GTA VI's night share is 0.66 —
+the highest in the set (Saros 0.517, FFVII 0.332, the other five
+≤0.028), z ≈ +1.7. The closest CV analogue, the held FFVII fold
+(high night z, slope fit without FFVII in the pool), gains +0.0191 —
+the mechanism generalises to a held-out high-night curve. The other
+two stack pieces are the same timezone-mix story (pacific =
+first-wave share, eve = evening shape) with less shrinkage now that
+the night slope carries h3–4.
+
+### 13.3 Results (LOO through the shipped `main.py`, verified by hand)
+
+| | mean pinball loss | 90% coverage | typical miss |
+|---|---|---|---|
+| Round 7, similar (n=7) | **0.1134** | 0.91 | 0.180 |
+| Round 6, same folds | 0.1206 | 0.89 | 0.190 |
+| House baseline, same folds | 0.3435 | 0.78 | 0.548 |
+| Round 7, all launches (n=37) | 0.7991 | — | — |
+| Round 6, all launches | 0.7962 | — | — |
+
+Per-fold (round 7 vs round 6): FFVII 0.1037 vs 0.1229 (+0.0191),
+Zelda 0.1441 vs 0.1627 (+0.0185), Yōtei 0.1044 vs 0.1170 (+0.0126),
+Saros 0.1101 vs 0.1149 (+0.0048), Last of Us 0.1304 vs 0.1350
+(+0.0046), Stellar 0.1198 vs 0.1205 (+0.0007), Tsushima 0.0815 vs
+0.0715 (−0.0100) — 6/7 wins, paired mean +0.0072. Leave-two-out
+(21 pairs, shipped `main.py`): **0.1211** vs round 6's 0.1304
+(35/42 wins). This is the first round to clear the acceptance rule
+on every leg (+0.0072 > +0.005, 6/7 wins, ALL 0.7991 ≤ 0.80,
+coverage 0.91 ≥ 0.90, L2O holds up).
+
+### 13.4 What was tried and rejected
+
+| candidate | SIM | cov | ALL | L2O | verdict |
+|---|---|---|---|---|---|
+| REC (night h3–4 ×1.0 + pac.75 + eve.5 + slope.6) | **0.1134** | 0.91 | 0.7991 | 0.1211, 35/42 | **PASS** |
+| base stack (night+pac.75+eve.5, slope 0.5) | 0.1158 | 0.91 | 0.7944 | 0.1230, 32/42 | near-pass (fallback) |
+| night h3–4 ×1.0 alone | 0.1176 | 0.92 | 0.7887 | 0.1276, 24/42 | near-miss |
+| night h3–4 ×0.5 alone | 0.1185 | 0.91 | 0.7889 | — | near-miss |
+| night+pac1.0 | 0.1163 | 0.91 | 0.7968 | 0.1258, 28/42 | near-miss |
+| night+eve.5 | 0.1165 | 0.91 | 0.7906 | 0.1241, 30/42 | near-miss |
+| pac.75+eve.5 (no night) | 0.1184 | 0.89 | 0.7988 | 0.1265, 30/42 | below bar |
+| joint re-tune, other knobs | 0.1184–0.1234 | 0.83–0.94 | 0.7884–0.8171 | — | below bar / breach |
+| asymmetric σ / empirical-quantile blend | 0.1209–0.1234 | 0.83–0.88 | 0.8013–0.8171 | — | dead |
+| per-hour σ shrink | 0.1208–0.1216 | 0.88–0.89 | 0.7931–0.7944 | — | dead |
+| profile / factor kernel weights | 0.1231–0.1335 | 0.88–0.94 | 0.7884–0.8037 | — | dead |
+| release weekday (Fri binary) | 0.1226–0.1364 | 0.88–0.90 | 0.7965–0.8083 | — | dead |
+| fine split / asia bands | 0.1189–0.1230 | 0.90–0.91 | 0.7925–0.8023 | — | dead / breach |
+
+Also dead by construction: 14-day pre-release trend and 7-day
+volatility — the comparables' pre-release rows are sparse (Yōtei
+141 rows, Saros 86 over 12–13 days; trend values came out as
+log-ratios of 8–9, i.e. data-availability artefacts). GTA VI's own
+category history (632 rows, 2026-08-27→11-17) is longer than any
+comparable's 14 days, but any feature needing >14 days is untestable
+in CV, so nothing was built on it.
+
+Diagnostics: the centre is at its ceiling — oracle weighted-median
+of the factor+pacific-adjusted log-ratios scores 0.1225, *worse*
+than shipped round 6 (trim beats it), and oracle per-hour σ scores
+0.1275, worse than pooled σ. Neither the median nor the spread can
+be improved by better aggregation; only a signal that moves the
+centre helps, which is what the night slope is. Residual skew is
+−0.48, yet asymmetric and empirical-quantile spreads both hurt.
+
+### 13.5 Final-case effect and risks
+
+On a synthetic GTA VI case (GTA VI history, day_start 2026-11-19,
+arbitrary p1=500k), REC moves the median vs shipped by **+0.45 log
+units at h3–4** (−0.74/−0.77 → −0.29/−0.33), +0.24 at h2, +0.19 at
+h5, ~0 at h15–19. The forecast dip becomes FFVII-like (shallow)
+instead of pool-median-like. This is the intended mechanism, but it
+is the largest single-hour adjustment in the model, and GTA VI's
+night share (0.66) sits above every training curve (max 0.517) — a
+mild extrapolation, though z ≈ +1.7 is inside the fitted range.
+**Tsushima is the counterexample**: near-zero night share yet a
+shallow true dip (h3 lr −0.32); it loses −0.0100 in the REC fold,
+the only losing fold. If GTA VI behaves like Tsushima rather than
+FFVII at h3–4, the night adjustment overshoots. **ALL margin**:
+REC's ALL is 0.7991 vs the 0.80 cap — 0.0009 of headroom.
+REC+trim 0.67 (LOO 0.1130, L2O 0.1207) was rejected for breaching
+it (0.8001). The fallback (base stack, slope_shrink 0.5) trades
++0.0024 of SIM for ALL 0.7944.
+
+### 13.6 Prize-level judgment
+
+LOO 0.1134 sits essentially **at the dev pay line** (20th place
+0.1140) — but the dev leaderboard's real top (0.0952) is scored on
+the 4 practice targets, not the 7-fold mean, so the scales aren't
+the same; a 0.1134 LOO is not a 0.1134 dev score. Two things work
+in our favour for the real final: the final pool has **11 similar
+curves vs 6 per CV fold**, so the final-case score should run better
+than the LOO mean; and the night mechanism's payoff is largest
+exactly for GTA VI (highest night share in the set). Realistic
+expectation: final score ~0.11, with single-case variance
+dominating (folds span 0.08–0.16) — top-20 is now plausible, not
+assured, and hinges on GTA VI's actual dip being shallow as the
+night share predicts. A 0.10 LOO was not reached and no tested
+mechanism gets there; the remaining gap is idiosyncratic curve
+shape, and further rounds on this data would be noise-chasing. The
+next informative step is the real submission, to get the first true
+practice score and see where a 0.1134-equivalent lands on the dev
+scale.
+
+### 13.7 Verification (round 7 — ported, uncommitted)
+
+- Ported by hand from the round-7 harness (`/tmp/cv7/v7.py`,
+  `forecast_v7` with `{'early':[{'feat':'night','hours':(3,4),
+  'shrink':1.0}], 'pacific_shrink':0.75, 'eve_weight':0.5,
+  'slope_shrink':0.6}`): constants changed in place, `night` as
+  6th feats element, `_night_fit` mirroring `_pacific_fit`, applied
+  in `adj_lr` after the pacific block. No other code changed.
+- LOO through the shipped `main.py` re-run: SIM 0.1134, ALL 0.7991,
+  coverage 0.91, typical miss 0.180 — identical to the harness
+  numbers, per-fold table identical too.
+- L2O through the shipped `main.py`: 0.1211 (n=42); re-checked
+  against the round-6 `main.py` from git HEAD: 35/42 wins.
+- Practice inputs p00–p03: valid output (23 rows, 5 non-decreasing
+  quantiles in (0, 1e9], ≤65536 bytes), two runs byte-identical,
+  0.25 s for all four (limit 8 s/case).
+- Edge-case suite (19 cases, /tmp/cv6/edge6.py): ALL PASS.
+- No secrets in the entry dir outside `.makefun/owner.json` (wallet
+  address only); no `__pycache__` committed.
+- Status: ported into the working tree, **not yet committed** —
+  awaiting the user's ship call (REC vs fallback). The user instead
+  ordered another round ("继续优化还不够"), so round 7's REC was
+  superseded by round 8 below — the round-7 code survives only in the
+  v8 harness base (`/tmp/cv8/v8.py`, `BASE`).
+
+## 14. Round 8 — joint re-tune of the round-7 stack: a marginal pass (2026-11-17)
+
+The user said round 7 "还不够" (still not enough) and ordered an
+eighth round. Round 7 had tuned the stack's pieces separately; round
+8 went looking for the joint optimum (harness `/tmp/cv8/v8.py`,
+`forecast_v8`, fork of v7 with the round-7 REC stack as the new
+base; `/tmp/cv8/run8.py`).
+
+### 14.1 Sanity check and a harness hazard
+
+Direct `main.py` LOO on the round-7 port: SIM 0.113449, ALL
+0.799091, cov 0.9068, miss 0.180491, per-fold exact — the v8 fork
+reproduces it bit-identically (max per-fold diff 0.0).
+
+Correction to the round-7 brief: `forecast_v7` with **empty** opts
+does *not* reproduce REC — it gives 0.1206 (round 6), because v7
+monkeypatches the module globals back to its round-6 `SHIPPED`
+values and applies no early slope. REC is reproduced exactly by
+`forecast_v7` **with the REC opts** and by direct `main.py`. The
+meaningful check — port vs harness — passes exactly.
+
+Hazard found: v7's `restore_globals()` leaves `M`'s globals at
+**round-6 values** after any call, so `M.forecast_case` silently
+becomes the round-6 model afterwards. This also contaminates
+`l2o7.run_l2o`'s base: its intermediate candidate rows were
+compared against "round-6 constants + night fit" (0.1276), not
+round-6 shipped (0.1304). The round-7 headline numbers are
+unaffected — REC's LOO (0.1134) and L2O (0.1211, 35/42 wins) were
+verified through direct `main.py` calls in a fresh process, and the
+round-8 L2O below re-verified REC at 0.1211 the same way. Do not use
+`l2o7.run_l2o` against the current main.py without resetting globals
+first; use `v8.run_l2o_v8` (which uses the fork itself as the L2O
+base) — and note that even that base is only clean while `M`'s
+`_slope_map` is the round-7 uniform version (§14.7).
+
+### 14.2 The candidate (C4)
+
+On top of round-7 REC, five changes:
+
+- `TRIM_WEIGHT` 0.5 → **0.75**
+- `SIGMA_INFLATE` 1.40 → **1.60**
+- `PACIFIC_SHRINK` 0.75 → **1.0** (unshrunk)
+- `NIGHT_SHRINK` 1.0 → **1.25**
+- **Banded slope map** — `_slope_map`'s uniform shrink is replaced
+  by: evening hours 13–19 use weight **0.95**, all other hours
+  **0.85** (`SLOPE_SHRINK = 0.85` as the base weight,
+  `SLOPE_EVE_WEIGHT = 0.95`, `SLOPE_EVE_HOURS = (13, …, 19)`).
+- **Per-hour sigma at h3–4 only** — after the pooled sigma is
+  computed, `sig_h[3]` and `sig_h[4]` are set to the per-hour IQR
+  sigma (IQR/1.349 × `SIGMA_INFLATE`, floored); all other hours keep
+  the pooled sigma; falls back to pooled when a bucket has <3
+  residuals. `EVE_WEIGHT` stays 0.5, `P1_SIGMA` stays 1.0.
+
+The two real levers are (1) trusting the factor's per-hour slopes
+more — uniform slope shrink 0.6→0.85, then banded (evening 0.95,
+rest 0.85) — worth ~−0.002 alone, but it costs coverage unless
+sigma is widened; and (2) trim 0.75 + wider sigma 1.6, which moves
+the centre flatter and restores coverage. Everything else (night
+shrink 1.25, pacific 1.0, sig_h34) contributes −0.0005 each at most.
+
+### 14.3 Results (LOO through the shipped `main.py`, verified by hand)
+
+| | mean pinball loss | 90% coverage | typical miss |
+|---|---|---|---|
+| Round 8 C4, similar (n=7) | **0.1083** | 0.91 | 0.171 |
+| Round 7 REC, same folds | 0.1134 | 0.91 | 0.180 |
+| House baseline, same folds | 0.3435 | 0.78 | 0.548 |
+| Round 8 C4, all launches (n=37) | 0.8039 | — | — |
+| Round 7 REC, all launches | 0.7991 | — | — |
+
+Per-fold (C4 vs REC): FFVII 0.0922 vs 0.1037 (+0.0115), Yōtei
+0.0903 vs 0.1044 (+0.0141), Last of Us 0.1247 vs 0.1304 (+0.0057),
+Saros 0.1056 vs 0.1101 (+0.0046), Stellar 0.1183 vs 0.1198
+(+0.0015), Zelda 0.1430 vs 0.1441 (+0.0012), Tsushima 0.0841 vs
+0.0815 (−0.0025) — 6/7 wins, paired mean +0.0051. Leave-two-out
+(21 pairs, shipped `main.py`): **0.1163** vs REC's 0.1211 (28/42
+wins).
+
+**Verdict: marginal pass, stated honestly.** C4 clears the +0.005
+bar by **0.00014** (+0.005141), with 6/7 wins and L2O holding up
+(−0.0049, 28/42). But the pass margin is ~1/100th of the 7-fold
+noise floor after ~80 candidates, and the honest estimate of the
+stack's true gain is ~−0.0045, not −0.0051. **ALL 0.8039 breaches
+the 0.80 cap by +0.0039** — inside the ≤0.005 band the round-8
+brief allowed as a stated trade-off (the final is a single GTA VI
+case; ALL measures launch types GTA VI cannot resemble), but it is a
+breach all the same, and the user was not asked about the rule change
+before the round ran. The clean near-miss **C2** (same stack with
+pacific 0.75 and band 0.90/0.85) scores LOO 0.1089 (+0.0045,
+misses the bar by 0.0005), cov 0.92, **ALL 0.7995 (under cap)**,
+6/7 wins, L2O 0.1171 (−0.0040, 29/42 wins) — the best L2O win
+count. C4 and C2 are within noise of each other; the choice between
+them is the ALL trade-off, not the SIM number.
+
+### 14.4 What was tried and rejected
+
+| candidate | SIM | cov | ALL | L2O | verdict |
+|---|---|---|---|---|---|
+| **C4: best stack + pac 1.0 + band .95/.85** | **0.1083** | 0.91 | 0.8039 | 0.1163, 28/42 | **marginal PASS** |
+| C1: best stack + pac 1.0 + band .9/.85 | 0.1084 | 0.92 | 0.8017 | 0.1165, 28/42 | marginal pass (+0.005021) |
+| C2: best stack + band .9/.85 (pac .75) | 0.1089 | 0.92 | 0.7995 | 0.1171, 29/42 | clean near-miss |
+| best stack (slope.85+sig1.6+trim.75+sig_h34+night1.25) | 0.1093 | 0.93 | 0.7977 | 0.1174, 28/42 | near-miss |
+| best + band 1.0/.85 | 0.1087 | 0.93 | 0.8031 | — | ALL breach |
+| best + band .95/.85 (no pac) | 0.1088 | 0.93 | 0.8014 | — | ALL breach |
+| best + pac 1.0 (no band) | 0.1089 | 0.93 | 0.8003 | — | ALL breach |
+| slope .85 + sig 1.6 + trim .75 | 0.1102 | 0.93 | 0.7994 | — | below bar |
+| slope .75 + trim .75 + sig 1.5 | 0.1112 | 0.91 | 0.8009 | — | below bar |
+| trim .75 + pac 1.0 | 0.1114 | 0.93 | 0.8030 | — | below bar |
+| slope .75 + sig 1.5 | 0.1117 | 0.91 | 0.7999 | — | below bar |
+| slope .85 + sig 1.5 + trim .75 | 0.1098 | 0.89 | 0.8052 | — | cov+ALL breach |
+| trim 1.00 / 0.75 / pac 1.00 alone | 0.1125–0.1129 | 0.91–0.92 | 0.8010–0.8018 | — | below bar |
+| eve 0.6 / p1 0.8 / 1.2 / sig 1.3 / 1.5 alone | 0.1131–0.1138 | 0.88–0.92 | 0.7927–0.8058 | — | dead |
+| night h2-4 / h3-5 / h2-6 (on REC) | 0.1136–0.1165 | 0.90–0.91 | 0.7967–0.8005 | — | dead |
+| night shr 1.25 / 0.75 (on REC) | 0.1130 / 0.1141 | 0.91 | 0.7981 / 0.8006 | — | tiny / dead |
+| night h3 and h4 separate slopes | 0.1137 | 0.91 | 0.7991 | — | dead |
+| inter night×pacific h3-4 (1.0 / 0.5) | 0.1132 / 0.1136 | 0.89–0.91 | 0.7999–0.8009 | — | dead |
+| night as 5th factor component (w 0.5 / 1.0) | 0.1256 / 0.1456 | 0.91 | 0.7822 / 0.7596 | — | badly dead (dilution) |
+| sig_h34 0.5 / 1.0 (on REC) | 0.1129 / 0.1126 | 0.91–0.92 | 0.7989–0.7990 | — | tiny |
+| smooth none / flat / light | 0.1126–0.1152 | 0.87–0.91 | 0.7972–0.8046 | — | dead / cov breach |
+| outer-quantile inflation 0.1 / 0.2 | 0.1138 / 0.1147 | 0.93 / 0.96 | 0.7852–0.7919 | — | dead (helps cov/ALL, hurts SIM) |
+| trim_h34 0.75 / 1.0 | 0.1134 / 0.1132 | 0.91 | 0.7990–0.7991 | — | dead |
+| night kernel tau 1.0 / 2.0 (h3-4) | 0.1131 | 0.89–0.90 | 0.7991–0.7994 | — | dead |
+| fine h2-6 / asia h2-6 shr 0.5 | 0.1149 / 0.1115 | 0.90–0.91 | 0.7995 / 0.8099 | — | dead / ALL breach |
+
+The joint optimum is a flat plateau at **0.1083–0.1093**: 15
+near-identical stacks score in that band, and every further knob
+moves SIM and ALL in opposite directions. No tested mechanism moves
+the centre by more than the stack already does; round 7's diagnosis
+stands (remaining error is idiosyncratic curve shape, oracle
+median/σ already worse than shipped). The new mechanisms in
+direction 3 are all dead: interaction, factor-component night,
+smoothing, outer inflation, per-hour trim, night kernel. REC+trim
+0.67 (round 7's near-miss, LOO 0.1130, L2O 0.1207, ALL 0.8001) was
+re-examined under the new ALL rule and is dominated by the C4/C2
+stacks on every leg.
+
+### 14.5 Final-case effect and risks
+
+On a synthetic GTA VI case (GTA VI history, day_start 2026-11-19,
+arbitrary p1=500k), C4 vs REC median (log units): h2–6 **+0.21 to
++0.26** (the early dip nearly vanishes: h3 median lr −0.04 vs REC
+−0.29), h7 +0.14, h8–12 ~0, h13–19 **−0.05 to −0.13** (lower
+evening peak), h20–24 −0.03 to −0.10. The h3 interval gets very
+wide: q05/q95 = 254,876/903,612 (q95 is 1.8× the median) from
+sig_h34 + sigma 1.6. Most of the +0.25 early move comes from trim
+0.75 + slope 0.85 + pacific 1.0 stacking, not from the night slope
+(1.25 vs 1.0 is ~+0.01–0.02 of it). If GTA VI's actual dip is
+pool-median-like, C4 overshoots early by ~+0.25; if it dips like
+FFVII/Yōtei, C4 is right. The Tsushima counterexample still stands
+(only losing fold, −0.0025).
+
+### 14.6 Stopping judgment
+
+Further rounds would be grid-chasing at the noise floor. The next
+informative step is the real submission — the first true practice
+score, which tells us where a 0.1083-equivalent lands on the dev
+scale (pay line 0.1140, real top 0.0952). If the user wants more
+optimization anyway, the only untried direction with a mechanism
+story is fitting the night/pacific slopes on factor-adjusted rather
+than raw log-ratios (expected effect ~nil, since the factor's h3–4
+slopes are ~0).
+
+### 14.7 Verification (round 8 — ported, uncommitted)
+
+- Ported by hand from the round-8 harness (`/tmp/cv8/v8.py`,
+  `forecast_v8` with `{'trim_w': 0.75, 'sigma_inflate': 1.6,
+  'pacific_shrink': 1.0, 'early': [{'feat': 'night', 'hours':
+  (3, 4), 'shrink': 1.25}], 'sig_h34': 1.0, 'slope_band':
+  {'eve_w': 0.95, 'base_w': 0.85, 'eve_hours': (13, …, 19)}}`):
+  constants changed in place, `_slope_map` banded,
+  `sig_h[3], sig_h[4]` set to the per-hour IQR sigma in
+  `_forecast_case_inner`. No other code changed.
+- LOO through the shipped `main.py` re-run: SIM 0.1083, ALL 0.8039,
+  coverage 0.91, typical miss 0.171 — identical to the harness
+  numbers, per-fold table identical too.
+- L2O through the shipped `main.py`: 0.1163 (n=42); re-checked
+  against REC at 0.1211 (28/42 wins). **Careful**: the first L2O
+  comparison (`run_l2o_v8` against the current main.py) gave a
+  wrong answer (C4 0.1180, base 0.1186) because v8's fork calls
+  `M._slope_map`, which round 8 changed to the banded version — the
+  "REC base" was actually REC constants + the banded map. The clean
+  numbers above come from two separate fresh processes
+  (`/tmp/cv8/l2o_c4.py`, `/tmp/cv8/l2o_rec.py`): the REC side patches
+  `M._slope_map` back to the uniform round-7 version, and it
+  reproduces the known REC L2O 0.1211 exactly, which validates the
+  patch.
+- Practice inputs p00–p03: valid output (23 rows, 5 non-decreasing
+  quantiles in (0, 1e9], ≤65536 bytes), two runs byte-identical,
+  0.25 s for all four (limit 8 s/case).
+- Edge-case suite (19 cases, /tmp/cv6/edge6.py): ALL PASS.
+- No secrets in the entry dir outside `.makefun/owner.json` (wallet
+  address only); no `__pycache__` committed.
+- Status: ported into the working tree, **not yet committed** —
+  awaiting the user's ship call (C4 vs C2). The user instead ordered
+  a ninth round ("继续优化"), which came back a clean null — see §15.
+
+## 15. Round 9 — joint fit and the last untried mechanisms: clean null (2026-11-17)
+
+The user ordered a ninth round after round 8's marginal pass. The
+plateau was already mapped (15 stacks at 0.1083–0.1093), so this
+round tested only mechanisms with a story, no blind grids (harness
+rebuilt from scratch as `/tmp/cv9/cv9.py` + `v9.py` — /tmp had been
+cleared again, taking cv6/cv7/cv8 with it; backups saved at
+`~/workspace/makefun/harness-cv9/`, outside `gta6-entry/` so they
+can't pollute the submission).
+
+### 15.1 Harness rebuild, validated
+
+The rebuild was validated exactly before any candidate was scored:
+direct `main.py` LOO gives SIM 0.108308, ALL 0.803851, cov 0.9130,
+miss 0.170816, per-fold exact; baseline 0.3435 / 0.9296 / 0.78 /
+0.548, also exact. The v9 fork base is byte-exact vs direct
+`main.py` on all 37 folds (JSON comparison). Two reconstruction
+traps found and fixed: (1) the GTA VI category entry has `_weight`
+1.0 but no hour-1 print, so it must be excluded from the similar
+set explicitly (it initially polluted SIM to 1.2933); (2) "typical
+miss" is the **mean** |ln y − ln q50|, not the median (0.1708 vs
+0.1475). Global hygiene verified: the fork sets/restores the **C4**
+values after every call; after fork calls `M`'s globals still read
+C4 and `M.forecast_case` still gives 0.108308. L2O base is
+`forecast_v9({})` itself, re-verified at 0.116255 (C4's 0.1163).
+
+### 15.2 Results — nothing moves C4
+
+| candidate | SIM | cov | ALL | wins | verdict |
+|---|---|---|---|---|---|
+| **C4 base** | **0.108308** | 0.91 | 0.8039 | — | base |
+| early_adj (slopes on factor-adjusted lrs) | 0.1096 | 0.90 | 0.8076 | 3/7 | dead |
+| early_adj + backfit 1 | 0.1114 | 0.93 | 0.8117 | 2/7 | dead |
+| early_adj + backfit 2 | 0.1123 | 0.92 | 0.8141 | 1/7 | dead |
+| asym_h34 lam 0.25 / 0.5 / 1.0 | 0.108289–0.108344 | 0.91 | 0.8040–0.8044 | 4/7 | noise |
+| sig_h34_pooled (h3+h4 residuals pooled) | 0.108263 | 0.92 | 0.8045 | 3/7 | noise |
+| sig_h34_w 0.5 / 0.75 | 0.108342 / 0.108268 | 0.91 | 0.8035–0.8036 | 3/7 | noise |
+| eve_hours 15–19 (band window) | 0.108402 | 0.93 | 0.8021 | 2/7 | dead |
+| trim max-only (one-sided trim) | 0.1109 | 0.93 | 0.7952 | 3/7 | dead |
+
+No L2O was run for any candidate: nothing passes or nearly passes
+(the acceptance bar is SIM ≤ 0.1033; the best candidate is 0.1083),
+so there is nothing for L2O to confirm. The largest "gain" in the
+round is −0.000045 (sig_h34_pooled) — 1/100th of the +0.005 bar,
+inside rounding noise, with a worse ALL and only 3/7 folds won.
+
+### 15.3 Direction 1 — joint fit: dead, and worse with iterations
+
+Fitting the pacific + night slopes on factor-adjusted log-ratios
+(single pass) gives 0.1096 (3/7 wins; Yōtei −0.0072, Zelda −0.0025).
+Backfitting — refit factor slopes on early-adjusted lrs, then refit
+early slopes, alternating — degrades monotonically: 0.1114 after 1
+iteration, 0.1123 after 2 (Zelda −0.0152). The sequential fit was
+already right; the joint fit just adds variance, exactly as round 8
+predicted. The fork implements this via `_early_fit_y` /
+`_pooled_slope_y` / `_slope_map_y` in `v9.py` (same estimators,
+regressand swapped); the code is there if anyone wants to re-check,
+but there is nothing to port.
+
+### 15.4 Direction 2 — Tsushima: no actionable feature
+
+Tsushima's dip is shallow (true h3/h4 log-ratios −0.325/−0.434,
+3rd shallowest of 7) despite a near-zero night share (0.004), and
+the C4 forecast over-dips it across h2–h6 (residuals
++0.26/+0.40/+0.30/+0.27/+0.14, decaying with hour — a broad
+early-shape miss, not a night-specific one). But nothing in the
+pre-release data distinguishes it: its feature z-scores vs the
+6-curve pool are all |z| < 1 (logp1 +0.79, vpc +0.37, pre +0.03,
+eve −0.83, pacific −0.14, night −0.98); its band shares are
+unremarkable in every UTC window (night 0.004, morn5–8 0.004, asia
+1.172, eve 2.107, late-evening 2.535 — high, but Last of Us is
+higher at 2.607 with a deep dip); it released on a Friday like
+three other similar curves. A band-correlation diagnostic across
+the 7 folds (C4 forecast error at h3/h4/h5 vs 8 log band shares, 24
+correlations) finds max |r| = 0.74 (morn5–8 at h5; eve/asia at h3
+are −0.73/−0.72) — with n=7 and 24 tests, |r| ≈ 0.8 arises by
+chance alone, and none of the three has a clean mechanism story.
+The Tsushima miss is idiosyncratic curve shape, consistent with
+rounds 7–8. Nothing to build.
+
+### 15.5 Direction 3 — asymmetric sigma at h3–4 only: dead
+
+Note the premise has also moved: pooled residuals under C4 now have
+skew **+0.075** (essentially symmetric; round 7's −0.48 was for the
+round-6 model), and the h3–4 residuals skew +0.41 on n=12 —
+unreliable. The asym variants (ratio version, scaled to the
+per-hour sigma) move SIM by ±0.00004 at most. Dead.
+
+### 15.6 Stopping judgment
+
+The plateau is now confirmed from a new angle: even the joint fit
+— the one untried direction with a real mechanism story — moves
+nothing (and the wrong way), and the remaining untried mechanisms
+all land within ±0.0001 of C4. The centre cannot be moved further
+with this data; the residual error is idiosyncratic curve shape,
+and the 7-fold noise floor is ~±0.005, i.e. ~100× larger than
+anything round 9 found. **A tenth round on the same data would be
+noise-chasing.** The next informative step is the real submission —
+the first true practice score, which tells us where a
+0.1083-equivalent lands on the dev scale (pay line 0.1140, real top
+0.0952). On the still-open C4-vs-C2 choice: round 9 builds on C4,
+and every tested mechanism is stack-relative with a ~zero effect on
+C4, so the null applies to C2 as well to within noise (C2 differs
+only in pacific shrink and band weights). Nothing in this round
+changes that choice.
+
+### 15.7 Verification (round 9 — null, nothing ported)
+
+- The rebuilt harness (`~/workspace/makefun/harness-cv9/cv9.py`)
+  was re-run independently against the shipped `main.py`: SIM
+  0.1083, cov 0.91, miss 0.171, ALL 0.8039, per-fold identical —
+  the rebuild is valid.
+- Spot-checked three round-9 candidates through the v9 fork:
+  early_adj 0.1096 (worse, matches the report), asym_h34 0.5
+  0.1083 (noise), sig_h34_pooled 0.1083 (noise). The null holds.
+- No code changed in `~/workspace/makefun/gta6-entry/` this round;
+  `main.py` is still the uncommitted C4 port, `README.md` and this
+  file updated to record the null.
+- Status: awaiting the user's ship call (C4 vs C2), then the
+  README/About fix and the resubmission.
+  an eleventh round ("继续优化") — also a clean null, but it
+  produced one ship-decision fact (see §17.3): the C4-vs-C2 choice
+  is worth at most 0.019 log units on the real target, while the
+  s_target clamp pad (not on the ballot) is worth up to 0.83.
+
+## 16. Round 10 — details: fine grid, windows, median definition: clean null (2026-11-17)
+
+The user ordered a tenth round, this time on the details. The
+plateau was already mapped (15 stacks at 0.1083–0.1093), so this
+round tested only small things rounds 7–9 didn't touch — no
+re-runs of the round-8 grid, no re-testing of dead mechanisms
+(harness: durable backup `~/workspace/makefun/harness-cv9/cv9.py` +
+`v9.py`, copied to `/tmp/cv10/`; new fork `/tmp/cv10/v10.py`,
+backup at `~/workspace/makefun/harness-cv10/v10.py` + `run10.py`).
+
+### 16.1 Base verification
+
+The v10 base (14-day synth) reproduces C4 **exactly**: SIM
+0.108308, cov 0.9130, miss 0.170816, ALL 0.803851, per-fold exact;
+baseline also exact (0.3435 / 0.9296 / 0.78 / 0.548).
+Patch-path identity: `band_days 7 + pre_days 1` (the windowed
+re-implementations of `_band_share`/`_pre_mean`) reproduces C4
+exactly — the window machinery itself introduces zero difference.
+Global hygiene: after fork calls, `M`'s globals still read C4 and
+`M.forecast_case` still gives SIM 0.1083. L2O base is
+`forecast_v10({})` itself. One implementation note: cv9's
+`synth_case` truncates the target's history to 7 days, so windows
+> 7 days would have given the target a 7-day view while the pool
+saw the full window; `synth_case10` (14-day target history) and
+`run_loo10`/`run_l2o_v10` were written on top of it, and verified
+to give identical C4 numbers (the C4 features only look back 7
+days / 24h, so the extra rows are ignored).
+
+### 16.2 Results — nothing moves C4
+
+| candidate | SIM | cov | ALL | wins | verdict |
+|---|---|---|---|---|---|
+| **C4 base** | **0.108308** | 0.91 | 0.8039 | — | base |
+| pacific_shrink 0.85 / 0.90 / 0.95 | 0.1085 / 0.1086 / 0.1083 | 0.91 | 0.8022–0.8030 | 3/7, 2/7, 3/7 | noise |
+| slope_eve_weight 0.90 / 0.93 / 0.97 | 0.1084 / 0.1083 / 0.1083 | 0.91–0.92 | 0.8017–0.8050 | 4/7, 5/7, 4/7 | noise |
+| slope_shrink 0.80 / 0.90 | 0.1087 / 0.1086 | 0.93 | 0.8025 / 0.8046 | 3/7 | noise |
+| trim_w 0.70 / 0.80 | 0.1084 / 0.1082 | 0.91 | 0.8036 / 0.8040 | 3/7, 4/7 | noise |
+| sigma_inflate 1.55 / 1.65 | 0.1082 / 0.1085 | 0.91 / 0.93 | 0.8067 / 0.8011 | 3/7, 4/7 | noise |
+| p1_sigma 0.9 / 1.1 | 0.1083 / 0.1083 | 0.91 | 0.8033 / 0.8047 | 3/7, 4/7 | noise |
+| night_shrink 1.0 / 1.5 | 0.1089 / 0.1087 | 0.93 | 0.8047 / 0.8017 | 2/7, 3/7 | noise |
+| sigma_floor 0.10 / 0.20 | 0.1083 / 0.1082 | 0.91 | 0.8038 / 0.8035 | 1/7, 3/7 | noise (floor doesn't bind) |
+| band_days 3 | 0.1118 | 0.92 | 0.7908 | 2/7 | dead |
+| **band_days 5** | **0.1062** | 0.93 | 0.8075 | 3/7 | fluke — see §16.3 |
+| band_days 10 | 0.1129 | 0.89 | 0.7963 | 2/7 | dead |
+| band_days 14 | 0.1173 | 0.93 | 0.7912 | 0/7 | dead |
+| band_days 4 / 6 | 0.1106 / 0.1104 | 0.92 / 0.93 | 0.7912 / 0.8044 | 3/7, 2/7 | dead (5 is isolated) |
+| pre_days 3 / 7 | 0.1176 / 0.1207 | 0.91 / 0.89 | 0.8193 / 0.8106 | 3/7, 1/7 | dead — buzz must be 24h |
+| band3+pre3 / band14+pre7 | 0.1201 / 0.1236 | 0.89 / 0.92 | 0.8056 / 0.7985 | 2/7, 0/7 | dead |
+| band5 + wquant step | 0.1058 | 0.93 | 0.8073 | 4/7 | best grid point — still noise |
+| band5 + trim 0.8 | 0.1062 | 0.93 | 0.8073 | 3/7 | noise |
+| slope_smooth none / wide | 0.1098 / 0.1086 | 0.93 | 0.8030 / 0.8035 | 1/7, 3/7 | dead |
+| wquant end / start / step | 0.1079 / 0.1087 / 0.1078 | 0.91–0.93 | 0.8020–0.8037 | 4/7, 2/7, 4/7 | noise |
+| trim_h34 0.5 / 0.6 / 0.85 / 1.0 | 0.1083 (all) | 0.91 | 0.8037–0.8040 | 3–4/7 | dead — literally no effect |
+| sim_thresh 0.5 (pool 18/fold) | 0.5144 | 0.94 | 0.6176 | 0/7 | catastrophic |
+| sim_thresh 0.3 (pool 20/fold) | 0.5257 | 0.95 | 0.6135 | 0/7 | catastrophic |
+
+No L2O was run for the grid (nothing near the bar). L2O was run
+for the two band-5 points only: band5 L2O 0.1143 (17/42 wins vs
+C4's 0.1163); band5+step L2O 0.1139 (20/42 wins).
+
+### 16.3 Autopsy: the band_days 5 "gain" is a single-fold artifact
+
+Per-fold (band5 vs C4): FFVII −0.0055, Tsushima −0.0039, Yōtei
++0.0037, Saros −0.0060, Stellar −0.0011, Last of Us +0.0021,
+**Zelda +0.0253**. The entire −0.0021 mean gain is Zelda alone; 4
+of 7 folds lose. Neighbouring windows are both worse than C4 (4d:
+0.1106, 6d: 0.1104) — the response is non-monotonic, a one-point
+dip, not a window effect. L2O confirms the shape: mean improves
+−0.0020 but only 17/42 pairs win — the mean is carried by a few
+large wins, most pairs lose. Feature check: Zelda's own band
+features barely move across windows (eve log-share 0.866→0.863→
+0.862, pacific 0.493→0.501→0.519, night 0.006→0.009→0.017 from
+3d→5d→7d). The gain comes from the *pool's* standardization
+shifting — Yōtei's eve log-share drops 0.929 (7d) → 0.846 (5d),
+reshuffling the factor z-scores and fitted slopes, which happens to
+flatter Zelda's fold. A standardization artifact, not a mechanism.
+The best combined point (band5 + wquant step, 0.1058) inherits all
+of this: 4/7 wins, ALL 0.8073 (breach +0.0073, above the ≤0.005
+band), L2O 20/42 wins. It misses the SIM bar by 0.0025 and two
+other legs. Not a candidate.
+
+### 16.4 Other findings worth recording
+
+- **The 24h pre-release mean is load-bearing.** `pre_days` 3 →
+  0.1176 (+0.0093), 7 → 0.1207 (+0.0124). The "buzz" feature must
+  be current; averaging over days dilutes the launch-week signal.
+  This is a useful negative result: it confirms the current 24h
+  design rather than suggesting a change.
+- **Longer band windows hurt monotonically past 7 days** (10d:
+  0.1129, 14d: 0.1173, 0/7 wins) — older pre-release days carry a
+  different diurnal regime; the 7-day window is the right side of
+  that trade-off. The 5-day dip is the only exception and is
+  explained above as noise.
+- **Pool edge is decisive, in the expected direction.** Adding the
+  12 PC launches (threshold 0.5, pool 7→18) destroys the
+  similar-set forecast (0.5144) while improving ALL (0.6176) —
+  exactly the similarity-vs-size trade-off, resolved firmly in
+  favour of similarity. Note the suggested threshold (≥0.9) is
+  vacuous: the weight distribution is {0.04, 0.12, 0.15, 0.17,
+  0.25, 0.3, 0.5, 1.0} — nothing sits in (0.9, 1.0), so 0.9 ≡
+  0.99. The meaningful thresholds are 0.5 and 0.3, both tested.
+- **Trim weight at h3–4 has zero effect** (all four values give SIM
+  0.1083 to 4 decimals) — the trim blend at two hours out of 23
+  with six samples cannot move the median.
+- **The fine grid is flat to ±0.0006** across 18 single-knob
+  moves. `sigma_floor` doesn't bind (0.10 vs 0.20 identical). The
+  slope-map smoothing variants are dead (none: 0.1098, wide:
+  0.1086). The weighted-median plotting positions move SIM by at
+  most 0.0005 in either direction — the median definition is not a
+  lever at n=6–7.
+
+### 16.5 Stopping judgment
+
+The plateau is now confirmed from a fourth independent angle:
+rounds 7–8 mapped the stack optimum, round 9 showed even the
+joint fit moves nothing, and round 10 shows the *details* don't
+move it either — fine grid ±0.0006, windows (except one
+single-fold artifact), smoothing, median definition, h3–4 trim,
+pool edge all dead or worse. The residual error is idiosyncratic
+curve shape and the 7-fold noise floor (~±0.005) is ~2× larger
+than the biggest above-noise point in this round, which itself is
+a single-fold artifact. **An eleventh round on the same data would
+be noise-chasing.** The next informative step remains the real
+submission — the first true practice score, which tells us where a
+0.1083-equivalent lands on the dev scale (pay line 0.1140, real
+top 0.0952). Nothing in this round changes the still-open C4-vs-C2
+choice (both differ from the tested base only in pacific shrink
+and band weights, and every tested detail is stack-relative with a
+~zero effect).
+
+### 16.6 Verification (round 10 — null, nothing ported)
+
+- Spot-checked the round-10 base and the three most interesting
+  points through the v10 fork (`~/workspace/makefun/harness-cv10/`):
+  C4 base 0.1083 (exact), band_days 5 0.1062 with the per-fold
+  table identical (Zelda +0.0253 alone), band5 + wquant step
+  0.1058, band_days 4 0.1106 and 6 0.1104 (both worse than C4 —
+  the non-monotonic dip is real). The null and the autopsy hold.
+- No code changed in `~/workspace/makefun/gta6-entry/` this round;
+  `main.py` is still the uncommitted C4 port, `README.md` and this
+  file updated to record the null.
+- Status: awaiting the user's ship call (C4 vs C2), then the
+  README/About fix and the resubmission. The user instead ordered
+  an eleventh round ("继续优化") — also a clean null, but it
+  produced one ship-decision fact (see §17.3): the C4-vs-C2 choice
+  is worth at most 0.019 log units on the real target, while the
+  s_target clamp pad (not on the ballot) is worth up to 0.83.
+
+## 17. Round 11 — last untested details + final-case sensitivity: clean null (2026-11-17)
+
+The user ordered an eleventh round. Only the last few genuinely
+untested details were covered — no re-runs of any round-8/9/10
+grid, no re-testing of dead mechanisms (harness: durable cv10
+backup copied to `/tmp/cv11/`; new fork `/tmp/cv11/v11.py` (+
+`run11.py`, `final_case.py`), durable backups at
+`~/workspace/makefun/harness-cv11/`).
+
+### 17.1 Base verification
+
+The v11 base reproduces C4 **exactly**: SIM 0.108308, cov 0.9130,
+miss 0.170816, ALL 0.803851, per-fold exact; baseline also exact
+(0.3435 / 0.9296 / 0.78 / 0.548). Global hygiene verified
+explicitly: after a fork call with **all** opts set (`soft='all'`,
+`emp_h34=0.5`, `pad_mult=inf`, `sigma_unsmoothed=True`), `M`'s
+globals still read C4, `M._factor_fit` is restored, and a fresh LOO
+still gives SIM 0.1083. L2O base is `forecast_v11({})` itself.
+
+One correction to the brief's premise, found while reading the
+record: **soft similarity weights were already tested in round 2**
+(§6.2: "Soft similarity weights (all 37, weighted)", SIM 0.3302 —
+collapsed). What was genuinely untested was the re-test **on the
+C4 stack** with the fits/median split made explicit, so it was run
+as instructed — both variants. The result confirms round 2.
+
+### 17.2 Results — nothing moves C4
+
+| candidate | SIM | cov | ALL | wins | verdict |
+|---|---|---|---|---|---|
+| **C4 base** | **0.108308** | 0.91 | 0.8039 | — | base |
+| soft median (fits similar, median all 36) | 0.2422 | 0.99 | 0.4772 | 0/7 | catastrophic |
+| soft all (weighted fits too) | 0.4695 | 0.99 | 0.5951 | 0/7 | catastrophic |
+| emp_h34 0.5 | 0.1082 | 0.89 | 0.8042 | 6/7 | noise + cov/ALL breach |
+| emp_h34 1.0 | 0.1094 | 0.89 | 0.8053 | 6/7 | dead |
+| pad_mult 1.0 / inf | 0.1071 | 0.91 | 0.8036 | 1/7 | single-fold, noise |
+| sigma_unsmoothed | 0.1080 | 0.88 | 0.8121 | 3/7 | noise + cov/ALL breach |
+
+No L2O was run for any candidate: nothing is near the bar (best
+point −0.0012, vs the +0.005 bar).
+
+**Soft pool weights: catastrophic, both variants.** `soft='median'`
+(fits stay on the similar pool; all 36 usable curves enter the
+median/trim loop with weight = sim-weight × p1 kernel): SIM
+0.2422, 0/7 wins. `soft='all'` (factor/pacific/night/slope fits
+weighted too): 0.4695, 0/7 wins. Implementation check: the
+median-only extension works as intended — e.g. "007 First Light"
+(weight 0.04375) gets s = +1.140 from the fit-pool stats and its
+h10 log-ratio moves −0.992 → −1.258 under the factor adjustment.
+The failure is the mechanism, not the code: non-similar launches'
+log-ratios are extreme (pre-unlock trickle at hour 1), and no
+weighting rescues the median. This matches round 2 (0.3302) and
+round 10's hard-threshold result (0.5144) — three independent
+confirmations that the similar pool must stay hard.
+
+**H3–4 empirical quantiles: noise with breaches.** `emp_h34 0.5`
+(normal quantiles blended 50/50 with empirical residual quantiles
+at h3–4 only; residuals n≈6–7): SIM 0.1082 (−0.0001), **6/7 wins**
+— but every win is tiny (FFVII +0.0007, Yōtei +0.0006, Saros
++0.0002, Stellar +0.0010, Last of Us +0.0021, Zelda +0.0025) and
+Tsushima loses −0.0064. Coverage drops to **0.89** (below the 0.90
+floor) and ALL worsens to 0.8042. The 6/7 wins are a coverage
+trade, not a centre improvement. `emp_h34 1.0`: 0.1094, worse.
+Round 7's global version was dead for the same reason (6 points
+cannot support five empirical quantiles); restricting it to h3–4
+doesn't fix that.
+
+**Clamp pad: the only above-zero point, and it's one fold.**
+Binding diagnostic (per fold, current factor): the pad-0.5 clamp
+binds on **exactly one** of 7 folds — Last of Us (tgt_raw −7.212
+vs clamped −6.634, pool s range [−2.75, +5.02]). The other six
+targets sit inside their pools' ranges. (§6.1's claim that the
+clamp "does not bind on any CV fold" was for the round-2 factor;
+for the current factor it binds once.) `pad_mult 1.0` and
+`pad_mult inf` give **identical** numbers (0.1071, −0.0012, 1/7
+wins): pad 1.0 already fully unbinds Last of Us (range [−10.52,
++12.79] contains −7.212). Per-fold: six folds identical to 4
+decimals, Last of Us alone improves +0.0083 (0.1247 → 0.1164).
+The whole −0.0012 mean gain is that one fold. It is below the
+0.002 noise threshold, wins 1/7, and misses the +0.005 bar by
+0.0038. Not a candidate — but see §17.3(c): the same clamp is the
+dominant final-case decision, where its CV evidence is exactly
+this one fold.
+
+**Sigma residuals around the unsmoothed median: noise with
+breaches.** SIM 0.1080 (−0.0003), 3/7 wins, but coverage falls to
+**0.88** and ALL worsens to **0.8121**. The tighter sigma
+(smoothing error removed) under-covers. Dead.
+
+### 17.3 Final-case sensitivity (diagnostic, not a CV candidate)
+
+Synthetic GTA VI case built as in rounds 7/8: GTA VI category
+history from the kit comparables (632 rows, 2026-08-27T17:00Z →
+2026-11-17T02:00Z), day_start 2026-11-19T00:00:00Z (the day's
+first instant per the kit spec; checkpoint 2026-11-19T01:00:00Z),
+p1=500k, no channels (vpc unknown). Comparables are the 38
+practice ones (the final's 42 add the four practice launches;
+their unlock/platforms aren't in the kit, so they can't be added
+— the similar pool is unaffected unless one of them is weight-1.0
+similar).
+
+Target features (p1=500k): log p1 +13.122, vpc None, log pre/p1
+−5.731 (pre-buzz ≈ 1.6k viewers vs p1 500k), **eve share 1.411**
+(the docstring's 1.19 is stale — measured on the current history;
+z = −6.31, not −9.5, still far outside the pool 2.06–2.53),
+pacific share 0.603 (docstring 0.60 ✓), night share 0.664
+(docstring 0.66 ✓). Factor: pooled slope +0.1192, **s_target raw
+−10.222, clamped (pad 0.5) −6.116**, pool s range [−2.86, +3.65],
+hard clamp (pad 0) −2.862. Pacific γ −0.0988 (z −1.17), night γ
++0.2514 (z +1.69).
+
+C4 absolute shape on this case (p1=500k): essentially no early
+dip (h2 −0.068, h3 +0.013, h4 −0.022 in log units; q50 h3 =
+506,328), deep trough h9–10 (−0.830/−0.843; q50 h10 = 215,210),
+evening recovery to −0.417 at h18 (q50 329,364).
+
+**(a) C4 vs C2 — the open ship choice barely matters on the real
+target.** Max |difference| **0.019 log units** (at h15). Early
+hours h2–6: −0.005 to −0.016 (C2 slightly lower); evening h13–19:
++0.014 to +0.019 (C2 slightly higher). At h3: C4 q50 506,328 vs C2
+500,490; at h15: 278,986 vs 284,303. The two candidates differ
+from each other by ~2% at most — far less than either differs from
+the truth's uncertainty. The ship choice is nearly immaterial on
+the final case.
+
+**(b) Eve z-cap — removing it changes NOTHING.** Max |difference|
+**0.000 log units** at every hour (bit-identical medians). The cap
+is entirely redundant on the final case: removing it pushes raw s
+from −10.222 to ≈ −12.1, but the s_target clamp pins it at −6.116
+either way. The cap can stay or go; it does not matter.
+
+**(c) s_target clamp — the dominant final-case decision, and CV
+cannot resolve it.** Removing the clamp moves the forecast by up
+to **−0.830 log units** at h18 (evening q50 329,364 → 143,614)
+and −0.485 at h10, −0.215 at h7; the early hours barely move
+(+0.017 at h2, +0.013 at h3). The hard clamp (pad 0) moves it the
+other way, up to **+0.658** at h18. Both cap+clamp off: up to
+−1.215 at h18 (q50 97,722). The pad sets the evening peak anywhere
+from ~98k to ~636k at p1=500k — a factor of ~2 either way. The only
+CV evidence on the clamp is the single Last-of-Us fold above
+(unclamping helps +0.0083, n=1). **Do not remove the clamp on that
+evidence** — n=1 cannot justify a 3× extrapolation beyond the pool
+s range, and the clamp is doing exactly its job as a guardrail
+against extrapolation. The forecast's evening peak is, to first
+order, a choice about the clamp pad, not about the data — and the
+conservative, defensible choice is to keep pad 0.5.
+
+**p1/channels robustness (extra check):** with the clamp in place,
+the forecast *shape* is nearly p1-invariant — h18/p1 = 0.67 /
+0.66 / 0.65 for p1 = 200k / 500k / 1M (s_raw −8.24 / −10.22 /
+−11.72, all clamped to −6.12). With channels added (vpc present,
+pool s range widens): channels 5,000 → s_raw −10.52, clamped
+−9.74, h18/p1 0.62; channels 20,000 → s_raw −8.56, clamped −8.56
+(not binding), h18/p1 0.73. So the clamped C4 shape is robust to
+the unknown hour-1 print and channel count within ~0.62–0.73 for
+the evening ratio. The clamp is doing exactly its job; the open
+question is only whether pad 0.5 is the right pad.
+
+### 17.4 Stopping judgment
+
+The plateau is now confirmed from a fifth independent angle:
+rounds 7–8 mapped the stack optimum, round 9 showed even the
+joint fit moves nothing, round 10 showed the details don't move it
+either, and round 11 shows the last untested mechanisms — soft
+pool weights (catastrophic, third confirmation), h3–4 empirical
+quantiles (noise + breaches), clamp pad (one fold, −0.0012),
+unsmoothed-median sigma (noise + breaches) — are all dead or
+worse. The residual error is idiosyncratic curve shape and the
+7-fold noise floor (~±0.005) is ~4× larger than the biggest
+above-zero point in this round, which itself is a single fold. **A
+twelfth round on the same data would be noise-chasing.** The next
+informative step remains the real submission — the first true
+practice score. The one genuinely new piece of information this
+round produced is not a candidate but a ship-decision fact: the
+C4-vs-C2 choice is worth at most 0.019 log units on the real
+target, while the clamp pad (not on the ballot) is worth up to
+0.83.
+
+### 17.5 Verification (round 11 — null, nothing ported)
+
+- Spot-checked the round-11 base and three candidates through the
+  v11 fork (`~/workspace/makefun/harness-cv11/`): C4 base 0.1083
+  (exact), pad_mult inf 0.1071 with the per-fold table identical
+  (Last of Us +0.0083 alone, six folds identical), emp_h34 0.5
+  0.1082 (cov 0.89), soft median 0.2422. The null holds.
+- Re-ran `final_case.py` independently: C4 vs C2 max 0.019 log
+  units (h15), nocap-C4 +0.000 at every hour, noclamp-C4 up to
+  −0.830 at h18, hardclamp-C4 up to +0.658. The sensitivity
+  numbers are confirmed.
+- No code changed in `~/workspace/makefun/gta6-entry/` this round;
+  `main.py` is still the uncommitted C4 port, `README.md` and this
+  file updated to record the null.
+- Status: awaiting the user's ship call (C4 vs C2 — now known to be
+  nearly immaterial), then the README/About fix and the
+  resubmission.
+

@@ -13,15 +13,16 @@ Method (everything is computed at runtime from the case file given):
     true draw, as one standardised score
     s = -z(ln p1) - z(ln viewers-per-channel at hour 1)
         + z(ln pre-release 24h mean viewers / p1)
-        + 0.25 * z(ln pre-release evening share).
+        + 0.5 * z(ln pre-release evening share).
     The evening share is the target's own pre-release diurnal shape:
     mean viewers at UTC 15-19 over the last 7 pre-release days, divided
     by the mean over all hours. A fanbase concentrated in the European
     evening watches relatively more in hours 15-19, so a high evening
     share goes with a steeper evening rise (it fixes Zelda, the factor's
     residual outlier: eve 2.40, steepest evening in the set). The weight
-    is 0.25, not 1.0: at full weight the component helps Zelda even more
-    but hurts Yotei/Saros and pushes the all-launch loss over the line.
+    is 0.5, not 1.0 (round 7, up from 0.25): at full weight the component
+    helps Zelda even more but hurts Yotei/Saros and pushes the all-launch
+    loss over the line.
     Big launches, concentrated hour-1 audiences (few channels, many viewers
     each) and hour-1 prints already far above pre-release buzz all go with
     flatter curves, so each training curve's log-ratio is shifted by
@@ -30,8 +31,10 @@ Method (everything is computed at runtime from the case file given):
     (hour 1 already reflects the launch's draw there) and ~0.15 in the
     evening (hours 15-19), a shape stable across every LOO training set,
     so b_h is estimated per hour, smoothed across neighbouring hours and
-    shrunk 50% toward the pooled slope (per-hour slopes come from 6-11
-    curves each and are noisy on their own).  The target's s is clamped to
+    shrunk toward the pooled slope (round 8, banded: evening hours 13-19
+    trust the smoothed per-hour slope at 95%, other hours at 85%; was a
+    uniform 40% in round 7, 50% before that — per-hour slopes come from
+    6-11 curves each and are noisy on their own).  The target's s is clamped to
     the training pool's range extended by half a range width, so the
     forecast never extrapolates wildly past the launches it learned from,
     while a target at the edge of what the pool has seen still gets its
@@ -50,8 +53,8 @@ Method (everything is computed at runtime from the case file given):
     11-14 over the 7 pre-release days divided by the mean over all
     hours.  A bigger first-wave share means a bigger hour-1 rush
     relative to the rest of the day, hence a deeper early dip, so a
-    dedicated slope (pooled over hours 2-6, shrunk 50% toward 0)
-    adjusts the log-ratios at hours 2-6 only.  The factor's own
+    dedicated slope (pooled over hours 2-6, shrunk 25% toward 0, round 7,
+    was 50%) adjusts the log-ratios at hours 2-6 only.  The factor's own
     per-hour slopes there are ~0, so folding this into the factor
     would dilute it to nothing.  7/7 LOO folds won, paired +0.0036,
     L2O +0.0020.  Shipped on the user's call: the gain is below the
@@ -59,6 +62,25 @@ Method (everything is computed at runtime from the case file given):
     flips and the mechanism is understood.  GTA VI's own pacific
     share is 0.60 (z ~ -1.2, low like Zelda/FFVII), so in the final
     case the adjustment is small and in the shallower-dip direction.
+  * Night-share early-hour adjustment (round 7): the share of the
+    fanbase awake at night, as the mean viewers at UTC 02-05 over the
+    7 pre-release days divided by the mean over all hours.  The loss
+    lives at hours 3-4 (the 02:00-04:00Z dead zone, per-hour LOO loss
+    0.216/0.172 vs a typical 0.11-0.14); a fanbase with a real night
+    audience keeps watching through it, so its dip is shallower — the
+    fitted slope is positive in every LOO fold.  A dedicated slope
+    (pooled over hours 3-4, unshrunk) adjusts the log-ratios at hours
+    3-4 only, mirroring the pacific fit.  LOO +0.0030 alone (6/7 wins);
+    stacked with the looser pacific/evening/slope shrinkage it is the
+    round's passing candidate: LOO 0.1134, 6/7 folds won, L2O 0.1211
+    (35/42 wins).  GTA VI's own night share is 0.66, the highest in
+    the set (z ~ +1.7), so in the final case this is the largest
+    single-hour adjustment in the model: the h3-4 median moves +0.45
+    log units (the dip becomes FFVII-like and shallow instead of
+    pool-median-like).  The counterexample is Tsushima (near-zero
+    night share yet a shallow true dip; the only losing fold, -0.0100):
+    if GTA VI dips like Tsushima rather than FFVII at h3-4, the night
+    adjustment overshoots.
   * Trim blend (round 6): the log-median at each hour is half the
     p1-weighted median and half the trimmed weighted mean of the same
     adjusted log-ratios (the trimmed mean drops the min and max per
@@ -68,15 +90,26 @@ Method (everything is computed at runtime from the case file given):
     (31/42 wins).  Shipped on the user's call: the gain is below the
     +0.005 acceptance rule, and coverage is 0.89, under the 0.90 floor
     (restoring it with a wider sigma costs the whole gain).
+    Round 8: the trim weight is 0.75, up from 0.5 — in the joint stack
+    (with the wider sigma and the banded slope map) the flatter centre
+    pays off instead of costing coverage.
+  * Per-hour sigma at hours 3-4 only (round 8): the dead-zone hours
+    have far wider residuals (sd 0.409/0.294 vs ~0.23 elsewhere), so
+    their intervals use the per-hour IQR sigma instead of the pooled
+    one; other hours keep the pooled sigma.  Falls back to pooled when
+    a bucket has too few residuals.
   * Median: weighted median of the (factor-adjusted) lr_h over the similar
     launches, with a Gaussian weight in log hour-1 size (sigma 1.0): bigger
     launches have flatter curves, so launches near the target's hour-1
     scale count more.
   * Spread: one pooled lognormal sigma from the interquartile range of the
     residuals of the adjusted log-ratios around the smoothed median
-    (IQR / 1.349, inflated x1.40, floored at 0.15).  Per-hour IQRs from
+    (IQR / 1.349, inflated x1.60, floored at 0.15; round 8, was x1.40 —
+    the banded slope map trusts the per-hour slopes more, which costs
+    coverage unless sigma is widened).  Per-hour IQRs from
     6-11 curves are too noisy to trust on their own; the pooled sigma is
-    both more stable and better covering.  Quantiles are
+    both more stable and better covering, except at hours 3-4 (see
+    above).  Quantiles are
     p1 * exp(median + z_tau * sigma).
   * Light smoothing: the log-median curve is smoothed across neighbouring
     hours with weights [0.25, 0.5, 0.25], which tames single-hour noise
@@ -85,16 +118,18 @@ Method (everything is computed at runtime from the case file given):
     every rolling-midnight launch.
 
 Leave-one-out cross-validation on the 38 practice comparables (see
-ANALYSIS.md): mean pinball loss 0.121 on the 7 console-only rolling-midnight
-curves (the target's class), 90% coverage 0.89, vs the house baseline's
-0.344 / 0.78 on the same folds.  Over all 37 usable curves the loss is
-0.796, dominated by simultaneous-global-unlock launches whose hour-1 print
-is a pre-unlock trickle and whose viewership then explodes 100-2000x;
-GTA VI cannot behave like those (its hour 1 is post-unlock), so that
-figure is not representative of the final.  Leave-two-out on the similar
-set (21 pairs, 5 training curves) gives 0.130, still ahead of round 5's
-0.135 on the same pairs, so the round-6 gain survives with one fewer
-training curve.
+ANALYSIS.md): mean pinball loss 0.108 on the 7 console-only rolling-midnight
+curves (the target's class), 90% coverage 0.91, typical miss 0.171, vs the
+house baseline's 0.344 / 0.78 on the same folds.  Over all 37 usable curves
+the loss is 0.804 — over the 0.80 cap, because the joint stack trades a
+little all-launch fit for similar-launch fit (see ANALYSIS.md §14); the
+all-launch figure is dominated by simultaneous-global-unlock launches
+whose hour-1 print is a pre-unlock trickle and whose viewership then
+explodes 100-2000x; GTA VI cannot behave like those (its hour 1 is
+post-unlock), so that figure is not representative of the final.
+Leave-two-out on the similar set (21 pairs, 5 training curves) gives
+0.116, still ahead of round 7's 0.121 on the same pairs, so the round-8
+gain survives with one fewer training curve.
 
 Robustness: forecast_case never raises -- any unexpected input shape falls
 back to the house persistence baseline, so the output is always a valid
@@ -126,18 +161,31 @@ HOURS = list(range(2, 25))
 P1_SIGMA = 1.0
 # Small-sample inflation of the IQR-based sigma, and its floor.
 # (Round 3: 1.40, up from 1.25 — the better-centred median shrank the
-# residuals, so the old inflation left the 90% interval under-covering.)
-SIGMA_INFLATE = 1.40
+# residuals, so the old inflation left the 90% interval under-covering.
+# Round 8: 1.60 — the banded slope map trusts the per-hour slopes
+# more, which costs coverage unless sigma is widened; the wider sigma
+# restores coverage to 0.91.)
+SIGMA_INFLATE = 1.60
 SIGMA_FLOOR = 0.15
 SIGMA_MIN = 0.05
 # Shrinkage of the per-hour factor slopes toward the pooled slope
 # (round 3): per-hour slopes are real but noisy from 6-11 curves.
-SLOPE_SHRINK = 0.5
+# Round 7: 0.6, up from 0.5.  Round 8: banded — the evening hours
+# 13-19 (where the per-hour slopes are 4-6 standard errors from zero)
+# trust the smoothed per-hour slope at SLOPE_EVE_WEIGHT, other hours
+# at SLOPE_SHRINK.  Worth ~-0.002 alone, but it costs coverage unless
+# sigma is widened (see SIGMA_INFLATE).
+SLOPE_SHRINK = 0.85
+SLOPE_EVE_WEIGHT = 0.95
+SLOPE_EVE_HOURS = tuple(range(13, 20))
 # Weight of the pre-release evening-share component in the steepness
 # factor (round 4), and the cap on its z-score: the final target's
 # evening share sits far outside the similar pool, and the linear
 # mapping cannot be trusted that far out (see _factor_fit).
-EVE_WEIGHT = 0.25
+# Round 7: 0.5, up from 0.25 — the timezone-mix story (pacific +
+# evening + night) carries more of the shape once the night slope
+# handles the dead-zone hours.
+EVE_WEIGHT = 0.5
 EVE_Z_CAP = 2.5
 # Pacific-share early-hour adjustment (round 5, shipped on the user's
 # call): the share of the fanbase in the first-unlock regions, as the
@@ -148,9 +196,27 @@ EVE_Z_CAP = 2.5
 # the log-ratios at hours 2-6 only.  The factor's own per-hour slopes
 # there are ~0, so folding this into the factor would dilute it to
 # nothing.  7/7 LOO folds won, paired +0.0036, L2O +0.0020.
+# Round 7: PACIFIC_SHRINK 0.75, up from 0.5.
+# Round 8: 1.0 (unshrunk) — in the joint stack the pacific slope
+# earns its full weight.
 PACIFIC_BAND = (11, 14)
 PACIFIC_HOURS = (2, 3, 4, 5, 6)
-PACIFIC_SHRINK = 0.5
+PACIFIC_SHRINK = 1.0
+# Night-share early-hour adjustment (round 7): the share of the fanbase
+# awake at night, as the mean viewers at UTC 02-05 over the 7
+# pre-release days divided by the mean over all hours.  The loss lives
+# at hours 3-4 (the 02:00-04:00Z dead zone); a fanbase with a real
+# night audience keeps watching through it, so its dip is shallower —
+# the fitted slope is positive in every LOO fold.  A dedicated slope
+# (pooled over hours 3-4, unshrunk) adjusts the log-ratios at hours
+# 3-4 only, mirroring _pacific_fit exactly.  GTA VI's night share is
+# 0.66, the highest in the set (z ~ +1.7), so the final-case adjustment
+# is the largest single-hour move in the model.
+NIGHT_BAND = (2, 5)
+NIGHT_HOURS = (3, 4)
+# Round 8: 1.25, up from 1.0 — a little more night slope in the
+# joint stack (worth ~-0.0005 on its own).
+NIGHT_SHRINK = 1.25
 # Trim-blend weight (round 6, shipped on the user's call): the log-median
 # at each hour is TRIM_WEIGHT * (trimmed weighted mean) + (1 - TRIM_WEIGHT)
 # * (weighted median), where the trimmed mean drops the min and max
@@ -160,7 +226,15 @@ PACIFIC_SHRINK = 0.5
 # (Zelda -0.0052).  LOO +0.0015 (4/7 wins), L2O +0.0045 (31/42 wins).
 # Coverage 0.89, under the 0.90 floor — restoring it with a wider sigma
 # costs the whole gain, and the user shipped it knowing that.
-TRIM_WEIGHT = 0.5
+# Round 8: 0.75, up from 0.5 — in the joint stack (with the wider
+# sigma and the banded slope map) the flatter centre pays off instead
+# of costing coverage.
+TRIM_WEIGHT = 0.75
+# Per-hour sigma at hours 3-4 only (round 8): the dead-zone hours have
+# far wider residuals (sd 0.409/0.294 vs ~0.23 elsewhere), so their
+# intervals use the per-hour IQR sigma instead of the pooled one.
+# Falls back to the pooled sigma when a bucket has too few residuals.
+SIGMA_H34_HOURS = (3, 4)
 # Baseline spread (house formula), used as the last-resort fallback.
 BASE_SIGMA = 0.15
 
@@ -259,9 +333,10 @@ def _eve_share(rows, day_start):
 
 def _target_features(case, p1):
     """(log p1, log viewers-per-channel at hour 1, log premean/p1,
-    log evening share, log pacific share) for the case being forecast.
-    The last three are None when the case carries no hour-1 channel
-    count / pre-release history / usable diurnal profile."""
+    log evening share, log pacific share, log night share) for the case
+    being forecast.  The last four are None when the case carries no
+    hour-1 channel count / pre-release history / usable diurnal
+    profile."""
     log_p1 = math.log(max(1.0, p1))
     vpc = None
     first = next((k for k in case.get("known") or []
@@ -284,13 +359,17 @@ def _target_features(case, p1):
     ps = _band_share(rows, day_start, PACIFIC_BAND[0], PACIFIC_BAND[1])
     if ps:
         pac = math.log(ps)
-    return (log_p1, vpc, pre, eve, pac)
+    nit = None
+    ns = _band_share(rows, day_start, NIGHT_BAND[0], NIGHT_BAND[1])
+    if ns:
+        nit = math.log(ns)
+    return (log_p1, vpc, pre, eve, pac, nit)
 
 
 def _curve_features(comp, chans, p1):
     """(log p1, log viewers-per-channel at hour 1, log premean/p1,
-    log evening share, log pacific share) for one comparable launch,
-    from its own hourly rows."""
+    log evening share, log pacific share, log night share) for one
+    comparable launch, from its own hourly rows."""
     log_p1 = math.log(p1)
     vpc = None
     ch1 = chans.get(1)
@@ -310,7 +389,12 @@ def _curve_features(comp, chans, p1):
                      PACIFIC_BAND[0], PACIFIC_BAND[1])
     if ps:
         pac = math.log(ps)
-    return (log_p1, vpc, pre, eve, pac)
+    nit = None
+    ns = _band_share(comp.get("hourly") or [], day_start,
+                     NIGHT_BAND[0], NIGHT_BAND[1])
+    if ns:
+        nit = math.log(ns)
+    return (log_p1, vpc, pre, eve, pac, nit)
 
 
 def _weight(comp):
@@ -548,12 +632,15 @@ def _slope_map(pool, fac_map, pooled):
     the evening (hours 15-19), a shape that is stable across every LOO
     training set (evening slopes 4-6 standard errors from zero).  Raw
     per-hour slopes come from 6-11 curves each, so they are smoothed
-    across neighbouring hours and shrunk 50% toward the pooled slope
-    before use; an hour with too few points falls back to the pooled
-    slope.  A single pooled slope under-adjusts the evening (where the
-    factor matters most) and over-adjusts the early hours (where it does
-    not); the per-hour map fixes both, at the cost of a slightly worse
-    fit on launch types GTA VI cannot resemble (see ANALYSIS.md §7).
+    across neighbouring hours and shrunk toward the pooled slope before
+    use; an hour with too few points falls back to the pooled slope.
+    The shrinkage is banded (round 8): evening hours 13-19 trust the
+    smoothed per-hour slope at SLOPE_EVE_WEIGHT, other hours at
+    SLOPE_SHRINK.  A single pooled slope under-adjusts the evening
+    (where the factor matters most) and over-adjusts the early hours
+    (where it does not); the per-hour map fixes both, at the cost of a
+    slightly worse fit on launch types GTA VI cannot resemble (see
+    ANALYSIS.md §7).
     """
     raw = {}
     for h in HOURS:
@@ -573,8 +660,11 @@ def _slope_map(pool, fac_map, pooled):
         den = sum((x - xb) ** 2 for x, _ in pts)
         raw[h] = num / den if den > 0 else 0.0
     smooth = _smooth(raw) if raw else {}
-    return {h: SLOPE_SHRINK * smooth.get(h, pooled) + (1.0 - SLOPE_SHRINK) * pooled
-            for h in HOURS}
+    out = {}
+    for h in HOURS:
+        w = SLOPE_EVE_WEIGHT if h in SLOPE_EVE_HOURS else SLOPE_SHRINK
+        out[h] = w * smooth.get(h, pooled) + (1.0 - w) * pooled
+    return out
 
 
 def _pacific_fit(pool, target_feats):
@@ -622,6 +712,53 @@ def _pacific_fit(pool, target_feats):
     if den <= 0 or npts < 6:
         return 0.0, ztgt, zmap
     return PACIFIC_SHRINK * (num / den), ztgt, zmap
+
+
+def _night_fit(pool, target_feats):
+    """Dedicated early-hour adjustment from the night share.
+
+    The night share (log mean viewers at UTC 02-05 over the 7
+    pre-release days / daily mean) is z-scored on the pool, and a pooled
+    within-hour OLS slope of log-ratio on that z is fitted over hours
+    3-4 and shrunk NIGHT_SHRINK toward 0.  The slope is positive in
+    every LOO fold: a fanbase with a real night audience keeps watching
+    through the 02:00-04:00Z dead zone, so its dip is shallower.
+    Mirrors _pacific_fit exactly.  Returns (gamma, z_target,
+    {id(curve): z}), or None when the feature cannot be built (fewer
+    than 3 pool values, or the target lacks it); a gamma of 0.0 means
+    no usable slope and adjusts nothing.
+    """
+    vals = [c[3][5] for c in pool if c[3][5] is not None]
+    if len(vals) < 3 or target_feats[5] is None:
+        return None
+    mu = sum(vals) / len(vals)
+    sd = math.sqrt(sum((v - mu) ** 2 for v in vals) / len(vals)) or 1.0
+    zmap = {id(c): (c[3][5] - mu) / sd for c in pool if c[3][5] is not None}
+    if len(zmap) < 3:
+        return None
+    ztgt = (target_feats[5] - mu) / sd
+    num = den = 0.0
+    npts = 0
+    for h in NIGHT_HOURS:
+        pts = []
+        for c in pool:
+            x = zmap.get(id(c))
+            if x is None:
+                continue
+            v = c[2].get(h)
+            if v and v > 0:
+                pts.append((x, math.log(v / c[1])))
+        if len(pts) < 3:
+            continue
+        yb = sum(y for _, y in pts) / len(pts)
+        xb = sum(x for x, _ in pts) / len(pts)
+        for x, y in pts:
+            num += (x - xb) * (y - yb)
+            den += (x - xb) ** 2
+            npts += 1
+    if den <= 0 or npts < 6:
+        return 0.0, ztgt, zmap
+    return NIGHT_SHRINK * (num / den), ztgt, zmap
 
 
 def _round2(x):
@@ -710,6 +847,9 @@ def _forecast_case_inner(case, name, zvals):
     # gracefully to no adjustment when the feature cannot be built.
     pac = _pacific_fit(curves, tfeats)
 
+    # Night-share early-hour adjustment (hours 3-4 only); same shape.
+    nit = _night_fit(curves, tfeats)
+
     def adj_lr(curve, h):
         _, cp1, hours, _ = curve
         v = hours.get(h)
@@ -722,6 +862,11 @@ def _forecast_case_inner(case, name, zvals):
                 lr -= b_map.get(h, b_fac) * (x - tgt_fac)
         if pac is not None and h in PACIFIC_HOURS:
             gam, ztgt, zmap = pac
+            z = zmap.get(id(curve))
+            if z is not None:
+                lr -= gam * (z - ztgt)
+        if nit is not None and h in NIGHT_HOURS:
+            gam, ztgt, zmap = nit
             z = zmap.get(id(curve))
             if z is not None:
                 lr -= gam * (z - ztgt)
@@ -756,18 +901,30 @@ def _forecast_case_inner(case, name, zvals):
 
     # Spread: one pooled sigma from the residuals of the adjusted
     # log-ratios around the smoothed median.  Falls back to per-hour IQRs
-    # when there are too few residuals to pool.
+    # when there are too few residuals to pool.  Hours 3-4 (round 8)
+    # use their own per-hour IQR sigma: their residuals are far wider
+    # than the pool's, so the pooled interval under-covers them.
     res = []
+    res_by_h = {h: [] for h in HOURS}
     for curve in curves:
         for h in HOURS:
             lr = adj_lr(curve, h)
             if lr is not None:
                 res.append(lr - med[h])
+                res_by_h[h].append(lr - med[h])
     if len(res) >= 8:
         res.sort()
         n = len(res)
         sigma = max((res[(3 * n) // 4] - res[n // 4]) / 1.349, SIGMA_MIN)
         sigma = max(sigma * SIGMA_INFLATE, SIGMA_FLOOR)
+        sig_h = {h: sigma for h in HOURS}
+        for h in SIGMA_H34_HOURS:
+            vals = sorted(res_by_h[h])
+            if len(vals) >= 3:
+                m = len(vals)
+                s_h = max((vals[(3 * m) // 4] - vals[m // 4]) / 1.349, SIGMA_MIN)
+                s_h = max(s_h * SIGMA_INFLATE, SIGMA_FLOOR)
+                sig_h[h] = s_h
     else:
         sig = {}
         for h in HOURS:
@@ -796,7 +953,7 @@ def _forecast_case_inner(case, name, zvals):
 
     rows = []
     for h in HOURS:
-        qs = [p1 * math.exp(med[h] + z * sigma) for z in zvals]
+        qs = [p1 * math.exp(med[h] + z * sig_h[h]) for z in zvals]
         qs = [min(max(q, 0.01), 1e9) for q in qs]
         for i in range(1, len(qs)):
             qs[i] = max(qs[i], qs[i - 1])
